@@ -1,0 +1,136 @@
+#!/bin/bash
+
+# input params
+IPSEC_PSK=''
+VPN_USER=''
+PASSWORD=''
+
+# check root
+if [ $(id -u) != 0 ]; then
+	echo 'Please start script whith root!'
+	exit 0
+fi
+
+# check version of linux
+if [[ $(uname --release | grep 'alt') != $(uname --release) ]]; then
+	echo 'This version linux not altlinux!'
+	exit 0
+fi
+
+# ??? installing requires
+choose_inst_deps() {
+	echo ''
+	while [[ true ]]; do
+		echo -n "This script installing requireses. Choose [y|n]: "
+		read item
+		case $item in
+			[Yy]* ) break;;
+			[Nn]* ) exit 0;;
+		esac
+	done
+}
+
+# genering key for IPSEC_PSK
+genering_key() {
+	echo -n 'Please input string (min 10 char): '
+	in_str='simple'
+	while [[ true ]]; do
+		read in_str
+		if [[ $(expr length $in_str) -le 10 ]]; then
+			echo -n 'Inputed string low 10 char -> '
+		else break
+		fi
+	done
+	IPSEC_PSK=$(echo $in_str | sha512sum)
+	l=$(expr length "$IPSEC_PSK")
+	let "l = $l-2"
+	IPSEC_PSK=$(expr substr "$IPSEC_PSK" 1 $l)
+	IPSEC_PSK=$(python py_scr.py 'genering_key' $IPSEC_PSK)
+	echo $IPSEC_PSK > IPSEC_PSK.key
+	echo 'Key generated succusseful!'
+	break
+}
+
+# ??? genering key
+while [[ true ]]; do
+	echo -n 'Must genering IPSEC_PSK?[y|n]: '
+	read item
+	case $item in
+		[Yy]* ) genering_key;;
+		[Nn]* )	break;;
+	esac
+done
+
+# read vpn name
+read -p 'Please enter you user(vpn) name: ' VPN_USER
+
+if [[ $VPN_USER == '' ]]; then
+	VPN_USER='vpn'
+	echo "Your login is default $VPN_USER"
+else echo "Your vpn name is $VPN_USER"
+fi
+
+# read vpn password
+echo -n 'Please enter password (min 8 char): '
+pass='1234'
+while [[ true ]]; do
+	read -s pass
+	if [[ $(expr length $pass) -le 8 ]]; then
+		echo ''
+		echo -n 'Inputed password low 8 char -> '
+	else
+		PASSWORD=$pass
+		break
+	fi
+done
+
+choose_inst_deps
+
+# instalation requires
+inst_deps() {
+	echo 'Update cahce for apt...'
+	apt-get update > /dev/null
+	echo 'Searching or install wget...'
+	apt-get install wget -y > /dev/null
+	echo 'Searching or install net-tools...'
+	apt-get install net-tools -y > /dev/null
+}
+
+inst_deps
+
+# getting public ip adress
+get_pub_ip() {
+	echo 'Please choose type of connection:'
+	echo '4) IPv4'
+	echo '6) IPv6'
+
+	while [[ true ]]; do
+		echo -n '-> '
+		read ip_type
+		case $ip_type in
+			[4]* ) PUBLICIP=$(wget -q -O - http://ipv4.wtfismyip.com/text); break;;
+			[6]* ) PUBLICIP=$(wget -q -O - http://ipv6.wtfismyip.com/text); break;;
+		esac
+	done
+
+	echo 'Getting public ip adress...'
+	if [[ "x$PUBLICIP" == "x" ]]; then
+		echo 'Error of check your ip-addres. Please, input ip manually.'
+		while [[ true ]]; do
+			echo -n 'ip-> '
+			read man_ip
+			if [[ $(expr length $man_ip) -lt 7 ]]; then
+				echo 'Incorrect format ip-address'
+			else
+				PUBLICIP=$man_ip
+				break
+			fi
+		done
+	fi
+	echo 'Public ip getted succussefully!'
+}
+
+get_pub_ip
+
+# geting private ip adress
+PRIVATEIP=$(ifconfig | sed -n '2 p' | sed 's/.*inet.*dr://;s/ B.*//')
