@@ -1,5 +1,12 @@
 #!/bin/bash
 
+debug=0
+
+if [[ $debug -eq 0 ]]; then
+	debug=2
+else debug=''
+fi
+
 # input params
 IPSEC_PSK=''
 VPN_USER=''
@@ -36,7 +43,7 @@ genering_key() {
 	in_str='simple'
 	while [[ true ]]; do
 		read in_str
-		if [[ $(expr length $in_str) -le 10 ]]; then
+		if [[ $(expr length $in_str 2>/dev/null) -le 10 ]]; then
 			echo -n 'Inputed string low 10 char -> '
 		else break
 		fi
@@ -75,7 +82,7 @@ echo -n 'Please enter password (min 8 char): '
 pass='1234'
 while [[ true ]]; do
 	read -s pass
-	if [[ $(expr length $pass) -le 8 ]]; then
+	if [[ $(expr length $pass 2>/dev/null) -le 8 ]]; then
 		echo ''
 		echo -n 'Inputed password low 8 char -> '
 	else
@@ -88,12 +95,12 @@ choose_inst_deps
 
 # instalation requires
 inst_deps() {
+	rm -f /var/cache/apt/archives/lock
 	echo 'Update cahce for apt...'
+	apt-get clean
 	apt-get update > /dev/null
-	echo 'Searching or install wget...'
-	apt-get install wget -y > /dev/null
-	echo 'Searching or install net-tools...'
-	apt-get install net-tools -y > /dev/null
+	echo 'Chacked and installing dependencies...'
+	apt-get install wget net-tools -y > /dev/null
 }
 
 inst_deps
@@ -127,10 +134,45 @@ get_pub_ip() {
 			fi
 		done
 	fi
+	sleep 1
 	echo 'Public ip getted succussefully!'
 }
 
 get_pub_ip
 
+sleep 1
 # geting private ip adress
-PRIVATEIP=$(ifconfig | sed -n '2 p' | sed 's/.*inet.*dr://;s/ B.*//')
+echo 'Getting private ip...'
+{
+	PRIVATEIP=$(hostname -i 2>/dev/null)
+} || {
+	PRIVATEIP=$(ifconfig | sed -n '2 p' | sed 's/.*inet.*dr://;s/ B.*//')
+}
+sleep 1
+echo 'Private ip getted succussefully!'
+
+deps_for_ipsec() {
+	sleep 1
+	echo 'Installing dependencies for ipsec...'
+	sleep 1
+
+	apt-get install gmp gmp-devel flex bison nss nspr gcc7 >/dev/null
+
+	rm -f /usr/bin/cc
+	ln -s /usr/bin/gcc-7 /usr/bin/cc
+
+	echo 'Now installing OpenSwan for source...'
+	sleep 1
+	echo 'Downloading OpenSwan...'
+	wget -q https://download.openswan.org/openswan/openswan-latest.tar.gz
+	tar -xvf openswan-latest.tar.gz >/dev/null
+	cd openswan-2.6.50
+	echo 'Compiling...'
+	make programs >/dev/null $(echo $debug)>/dev/null
+	echo 'Installing...'
+	make install >/dev/null
+}
+
+deps_for_ipsec
+
+echo 'Now will be configurating files.'
