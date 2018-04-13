@@ -1,0 +1,21 @@
+while [ -n "$1" ]
+do
+case "$1" in
+--debug) exec 3>&1 ;;
+*) exec 3>/dev/null ;;
+esac
+shift
+done
+
+deps=(flex gperf libcap-devel libcurl-devel libgmp-devel \
+			libldap-devel libpam-devel libssl-devel libxml2-devel)
+
+	for item in ${deps[*]}
+	do
+		if [[ $(rpm -qa $item) != '' ]]; then
+			echo "$item already exist"
+		else
+			echo "$item installing..."
+			apt-get install -y $item >&3
+		fi
+	done

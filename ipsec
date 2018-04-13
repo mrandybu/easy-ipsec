@@ -24,19 +24,6 @@ if [[ $(uname --release | grep 'alt') != $(uname --release) ]]; then
 	exit 0
 fi
 
-# ??? installing requires
-choose_inst_deps() {
-	echo ''
-	while [[ true ]]; do
-		echo -n "This script installing requireses. Choose [y|n]: "
-		read item
-		case $item in
-			[Yy]* ) break;;
-			[Nn]* ) exit 0;;
-		esac
-	done
-}
-
 # genering key for IPSEC_PSK
 genering_key() {
 	echo -n 'Please input string (min 10 char): '
@@ -58,38 +45,41 @@ genering_key() {
 	break
 }
 
-# ??? genering key
-while [[ true ]]; do
-	echo -n 'Must genering IPSEC_PSK?[y|n]: '
-	read item
-	case $item in
-		[Yy]* ) genering_key;;
-		[Nn]* )	break;;
-	esac
-done
-
 # read vpn name
-read -p 'Please enter you user(vpn) name: ' VPN_USER
+#read -p 'Please enter you user(vpn) name: ' VPN_USER
 
-if [[ $VPN_USER == '' ]]; then
-	VPN_USER='vpn'
-	echo "Your login is default $VPN_USER"
-else echo "Your vpn name is $VPN_USER"
-fi
+#if [[ $VPN_USER == '' ]]; then
+#	VPN_USER='vpn'
+#	echo "Your login is default $VPN_USER"
+#else echo "Your vpn name is $VPN_USER"
+#fi
 
 # read vpn password
-echo -n 'Please enter password (min 8 char): '
-pass='1234'
-while [[ true ]]; do
-	read -s pass
-	if [[ $(expr length $pass 2>/dev/null) -le 8 ]]; then
-		echo ''
-		echo -n 'Inputed password low 8 char -> '
-	else
-		PASSWORD=$pass
-		break
-	fi
-done
+#echo -n 'Please enter password (min 8 char): '
+#pass='1234'
+#while [[ true ]]; do
+#	read -s pass
+#	if [[ $(expr length $pass 2>/dev/null) -le 8 ]]; then
+#		echo ''
+#		echo -n 'Inputed password low 8 char -> '
+#	else
+#		PASSWORD=$pass
+#		break
+#	fi
+#done
+
+# ??? installing requires
+choose_inst_deps() {
+	echo ''
+	while [[ true ]]; do
+		echo -n "This script installing requireses. Choose [y|n]: "
+		read item
+		case $item in
+			[Yy]* ) break;;
+			[Nn]* ) exit 0;;
+		esac
+	done
+}
 
 choose_inst_deps
 
@@ -155,24 +145,67 @@ deps_for_ipsec() {
 	sleep 1
 	echo 'Installing dependencies for ipsec...'
 	sleep 1
+	deps=(flex gperf libcap-devel libcurl-devel libgmp-devel \
+			libldap-devel libpam-devel libssl-devel libxml2-devel)
 
-	apt-get install gmp gmp-devel flex bison nss nspr gcc7 >/dev/null
+	for item in ${deps[*]}
+	do
+		if [[ $(rpm -qa $item) != '' ]]; then
+			echo "$item already exist"
+		fi
+			echo "$item installing..."
+			apt-get install -y $item
+	done
 
-	rm -f /usr/bin/cc
-	ln -s /usr/bin/gcc-7 /usr/bin/cc
-
-	echo 'Now installing OpenSwan for source...'
-	sleep 1
-	echo 'Downloading OpenSwan...'
-	wget -q https://download.openswan.org/openswan/openswan-latest.tar.gz
-	tar -xvf openswan-latest.tar.gz >/dev/null
-	cd openswan-2.6.50
-	echo 'Compiling...'
-	make programs >/dev/null $(echo $debug)>/dev/null
-	echo 'Installing...'
-	make install >/dev/null
+	echo 'Checking StrongSwan...'
+	if [[ $(rpm -qa strongswan) != '' ]]; then
+		echo 'StrongSwan already installed!'
+	else
+		echo 'Now installing StrongSwan...'
+		apt-get install strongswan -y >/dev/null
+	fi
 }
 
 deps_for_ipsec
 
-echo 'Now will be configurating files.'
+echo 'Now will be configurating files...'
+
+echo '/etc/strongswan/ipsec.conf'
+
+cat > /etc/strongswan/ipsec.conf <<EOF
+config setup
+
+conn %default
+	ikelifetime=60m
+	keylife=20m
+	rekeymargin=3m
+	keyingtries=1
+	fragmentation=yes
+	keyexchange=ikev2
+
+conn home
+	left=%any
+	leftsourceip=%config
+	leftcert=nastyCer.pem
+	leftid=%any
+	leftfirewall=yes
+	right=18.144.20.52
+	rightsubnet=0.0.0.0/0
+	rightid=ec2-18-144-20-52.us-west-1.compute.amazonaws.com
+	auto=add
+EOF
+
+sleep 1
+
+echo '/etc/strongswan/ipsec.secrets'
+
+chmod 664 /etc/strongswan/ipsec.secrets
+cat > /etc/strongswan/ipsec.secrets <<EOF
+: RSA nastyKey.pem "test"
+EOF
+
+ipsec restart >/dev/null
+ipsec up home >/dev/null
+echo 'ipsec start!'
+echo -n 'you ip '
+echo $(wget -q -O - http://wtfismyip.com/text)
