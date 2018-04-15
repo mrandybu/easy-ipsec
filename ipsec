@@ -1,16 +1,16 @@
 #!/bin/bash
 
-debug=0
-
-if [[ $debug -eq 0 ]]; then
-	debug=2
-else debug=''
-fi
 
 # input params
+DATADIR='/home/mrdrew/'
+INITROOT='easy_init'
 IPSEC_PSK=''
 VPN_USER=''
 PASSWORD=''
+REMOTEIP=''
+IPSECTYPE=''
+
+exec 3>/dev/null
 
 # check root
 if [ $(id -u) != 0 ]; then
@@ -22,6 +22,59 @@ fi
 if [[ $(uname --release | grep 'alt') != $(uname --release) ]]; then
 	echo 'This version linux not altlinux!'
 	exit 0
+fi
+
+# init function
+init_fun() {
+	rm -rf $DATADIR/$INITROOT
+	mkdir $DATADIR/$INITROOT
+	touch $DATADIR/$INITROOT/init
+}
+
+# contune function
+contune_fun() {
+	if [[ -z $(ls $DATADIR | grep $INITROOT) ]]; then
+		echo -n 'init does not find! Init now? '
+		while [[ true ]]; do
+			echo -n '[Y|n]-> '
+			read key
+			if [[ -z key ]]; then
+				echo -n 'Key does not mast empty!-> '
+			else
+				case $key in
+					[Yy]* ) init_fun; break;;
+					[Nn]* ) exit 0;;
+				esac
+			fi
+		done
+	else
+		while read LINE; do
+			echo $LINE
+		done < $DATADIR/$INITROOT/init
+	fi
+}
+
+# second param
+while [[ -n $2 ]]; do
+	case $2 in
+		--debug ) exec 3>&1; break;;
+		--checkoff ) break;;
+		* ) echo 'Unknow params!'; exit 0;
+	esac
+done
+
+# check init
+if [[ -z $1 ]]; then
+	echo 'Parametr does not be empty!'
+	exit 0
+else
+	while [[ -n $1 ]]; do
+		case $1 in
+			--init ) init_fun; break;;
+			--contune ) contune_fun; break;;
+			* ) echo 'Unknow param!'; exit 0;;
+		esac
+	done
 fi
 
 # genering key for IPSEC_PSK
@@ -69,31 +122,23 @@ genering_key() {
 #done
 
 # ??? installing requires
-choose_inst_deps() {
-	echo ''
-	while [[ true ]]; do
-		echo -n "This script installing requireses. Choose [y|n]: "
-		read item
-		case $item in
-			[Yy]* ) break;;
-			[Nn]* ) exit 0;;
-		esac
-	done
-}
-
-choose_inst_deps
-
-# instalation requires
-inst_deps() {
-	rm -f /var/cache/apt/archives/lock
+rm -f /var/cache/apt/archives/lock
 	echo 'Update cahce for apt...'
 	apt-get clean
 	apt-get update > /dev/null
-	echo 'Chacked and installing dependencies...'
-	apt-get install wget net-tools -y > /dev/null
-}
+echo 'Cheking dependencies...'
+eps=(wget net-tools flex gperf libcap-devel libcurl-devel libgmp-devel \
+	libldap-devel libpam-devel libssl-devel libxml2-devel easy-rsa)
 
-inst_deps
+for item in ${deps[*]}
+do
+	if [[ $(rpm -qa $item) != '' ]]; then
+		echo "$item already exist"
+	else
+		echo "$item installing..."
+		apt-get install -y $item >&3
+	fi
+done
 
 # getting public ip adress
 get_pub_ip() {
@@ -141,32 +186,16 @@ echo 'Getting private ip...'
 sleep 1
 echo 'Private ip getted succussefully!'
 
-deps_for_ipsec() {
-	sleep 1
-	echo 'Installing dependencies for ipsec...'
-	sleep 1
-	deps=(flex gperf libcap-devel libcurl-devel libgmp-devel \
-			libldap-devel libpam-devel libssl-devel libxml2-devel)
-
-	for item in ${deps[*]}
-	do
-		if [[ $(rpm -qa $item) != '' ]]; then
-			echo "$item already exist"
-		fi
-			echo "$item installing..."
-			apt-get install -y $item
-	done
-
-	echo 'Checking StrongSwan...'
-	if [[ $(rpm -qa strongswan) != '' ]]; then
-		echo 'StrongSwan already installed!'
-	else
-		echo 'Now installing StrongSwan...'
-		apt-get install strongswan -y >/dev/null
-	fi
+# geneging certifikate
+gen_cer() {
+	echo 'Genering sertificate...'
+	rm -rf pki
+	easyrsa init-pki
+	echo "@$PUBLICIP" | easyrsa build-ca nopass
+	easyrsa build-server-full $PUBLICIP nopass
+	easyrsa build-client-full altun nopass
 }
-
-deps_for_ipsec
+gen_cer
 
 echo 'Now will be configurating files...'
 

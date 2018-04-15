@@ -1,11 +1,7 @@
-while [ -n "$1" ]
-do
-case "$1" in
---debug) exec 3>&1 ;;
-*) exec 3>/dev/null ;;
-esac
-shift
-done
+exec 3>/dev/null
+
+
+#--debug 1 --ip 1.1.1.1 
 
 deps=(flex gperf libcap-devel libcurl-devel libgmp-devel \
 			libldap-devel libpam-devel libssl-devel libxml2-devel)
