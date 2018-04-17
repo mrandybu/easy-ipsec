@@ -1,0 +1,67 @@
+#!/bin/bash
+
+P12FILE=''
+STRONGSWANDIR='/etc/strongswan'
+DATADIR='/etc/'
+INITROOT='easy-ipsec-init'
+TYPEAUTH=''
+FILENAME=''
+
+pushd $DATADIR$INITROOT
+
+# check root
+if [ $(id -u) != 0 ]; then
+	echo 'Please start script whith root!'
+	exit 0
+fi
+
+# param 1
+if [[ -z $1 ]]; then
+	echo 'Parametr does not be empty!'
+	exit 0
+else
+	while [[ -n $1 ]]; do
+		case $1 in
+			--psk ) TYPEAUTH='psk'; break;;
+			--cer ) TYPEAUTH='cer'; break;;
+			* ) echo "Unknow param '$1'"; exit 0;;
+		esac
+	done
+fi
+
+# param 2
+if [[ -z $2 ]]; then
+	echo 'Parametr does not be empty!'
+	exit 0
+else
+	P12FILE=$2
+fi
+
+if [[ $TYPEAUTH == 'psk' ]]; then
+	while read LINE; do
+		PSK=$LINE
+	done < $P12FILE
+	sed -i "s/$/$PSK/" $STRONGSWANDIR/ipsec.secrets
+fi
+
+if [[ $TYPEAUTH == 'cer' ]]; then
+	cp -f $P12FILE .
+	echo $PWD
+	FILENAME=$(basename $P12FILE)
+	echo 'Extract frpm p12...'
+	openssl pkcs12 -in $FILENAME -nocerts -out ca.key -password pass:'' -nodes
+	openssl pkcs12 -in $FILENAME -clcerts -nokeys -out ca.crt -password pass:''
+
+	echo 'Move ca & key...'
+	mv ca.crt $STRONGSWANDIR/ipsec.d/cacerts/
+	mv ca.key $STRONGSWANDIR/ipsec.d/private/
+
+	rm -rf ca.crt
+	rm -rf ca.key
+
+	popd
+
+	echo 'ok!'	
+fi
+
+ipsec restart

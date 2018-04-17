@@ -1,14 +1,15 @@
 #!/bin/bash
 
-
 # input params
-DATADIR='/home/mrdrew/'
-INITROOT='easy_init'
+DATADIR='/etc/'
+INITROOT='easy-ipsec-init'
 IPSEC_PSK=''
-VPN_USER=''
-PASSWORD=''
 REMOTEIP=''
 IPSECTYPE=''
+STRONGSWANDIR='/etc/strongswan'
+SUNSUB=''
+MOONSUB=''
+TYPENET=''
 
 exec 3>/dev/null
 
@@ -31,9 +32,22 @@ init_fun() {
 	touch $DATADIR/$INITROOT/init
 }
 
-# contune function
-contune_fun() {
-	if [[ -z $(ls $DATADIR | grep $INITROOT) ]]; then
+# reboot function
+reboot_fun() {
+
+	if [[ $(ls $DATADIR | grep $INITROOT) != '' ]]; then
+		if [[ $(ls $DATADIR$INITROOT | grep ipsec.*) != '' ]]; then
+			rm -f $STRONGSWANDIR/ipsec.conf
+			rm -f $STRONGSWANDIR/ipsec.secrets
+			cp -f $DATADIR$INITROOT/ipsec.* $STRONGSWANDIR
+			ipsec restart
+			echo 'Ipsec start! Use esey-ipsec start!'
+			exit 0
+		else
+			echo 'Init-file not found. Pleas make script with --init'
+			exit 0
+		fi
+	else
 		echo -n 'init does not find! Init now? '
 		while [[ true ]]; do
 			echo -n '[Y|n]-> '
@@ -47,23 +61,55 @@ contune_fun() {
 				esac
 			fi
 		done
-	else
-		while read LINE; do
-			echo $LINE
-		done < $DATADIR/$INITROOT/init
 	fi
 }
 
-# second param
-while [[ -n $2 ]]; do
-	case $2 in
+# 5 param
+while [[ -n $5 ]]; do
+	case $5 in
 		--debug ) exec 3>&1; break;;
 		--checkoff ) break;;
-		* ) echo 'Unknow params!'; exit 0;
+		* ) echo "Unknow params '$5'"; exit 0;
 	esac
 done
 
-# check init
+# 4 param
+if [[ $4 == '' && $1 != '--reboot' ]]; then
+	echo 'Parametr does not be empty!'
+	exit 0
+else
+	REMOTEIP=$4
+fi
+
+# 3 param
+if [[ $3 == '' && $1 != '--reboot' ]]; then
+	echo 'Parametr does not be empty!'
+	exit 0
+else
+	while [[ -n $3 ]]; do
+		case $3 in
+			--moon ) TYPENET='moon'; MOONSUB='10.1.0.0/16'; SUNSUB='10.2.0.0/16'; break;;
+			--sun ) TYPENET='sun'; MOONSUB='10.2.0.0/16'; SUNSUB='10.1.0.0/16'; break;;
+			* ) echo "Unknow param '$3'"; exit 0;;
+		esac
+	done
+fi
+
+# 2 param
+if [[ $2 == '' && $1 != '--reboot' ]]; then
+	echo 'Parametr does not be empty!'
+	exit 0
+else
+	while [[ -n $2 ]]; do
+		case $2 in
+			--psk ) IPSECTYPE='psk'; break;;
+			--cer ) IPSECTYPE='cer'; break;;
+			* ) echo "Unknow param '$2'"; exit 0;;
+		esac
+	done
+fi
+
+# 1 param
 if [[ -z $1 ]]; then
 	echo 'Parametr does not be empty!'
 	exit 0
@@ -71,8 +117,8 @@ else
 	while [[ -n $1 ]]; do
 		case $1 in
 			--init ) init_fun; break;;
-			--contune ) contune_fun; break;;
-			* ) echo 'Unknow param!'; exit 0;;
+			--reboot ) reboot_fun; break;;
+			* ) echo "Unknow param '$1'"; exit 0;;
 		esac
 	done
 fi
@@ -93,42 +139,23 @@ genering_key() {
 	let "l = $l-2"
 	IPSEC_PSK=$(expr substr "$IPSEC_PSK" 1 $l)
 	IPSEC_PSK=$(python py_scr.py 'genering_key' $IPSEC_PSK)
-	echo $IPSEC_PSK > IPSEC_PSK.key
+	echo $IPSEC_PSK > $DATADIR$INITROOT/IPSEC_PSK.key
 	echo 'Key generated succusseful!'
-	break
 }
 
-# read vpn name
-#read -p 'Please enter you user(vpn) name: ' VPN_USER
+if [[ $IPSECTYPE == 'psk' && $TYPENET == 'moon' ]]; then
+	genering_key
+fi
 
-#if [[ $VPN_USER == '' ]]; then
-#	VPN_USER='vpn'
-#	echo "Your login is default $VPN_USER"
-#else echo "Your vpn name is $VPN_USER"
-#fi
-
-# read vpn password
-#echo -n 'Please enter password (min 8 char): '
-#pass='1234'
-#while [[ true ]]; do
-#	read -s pass
-#	if [[ $(expr length $pass 2>/dev/null) -le 8 ]]; then
-#		echo ''
-#		echo -n 'Inputed password low 8 char -> '
-#	else
-#		PASSWORD=$pass
-#		break
-#	fi
-#done
-
-# ??? installing requires
+# installing requires
 rm -f /var/cache/apt/archives/lock
-	echo 'Update cahce for apt...'
-	apt-get clean
-	apt-get update > /dev/null
+rm -f /var/lib/apt/lists/lock
+echo 'Update cahce for apt...'
+apt-get clean
+apt-get update > /dev/null
 echo 'Cheking dependencies...'
-eps=(wget net-tools flex gperf libcap-devel libcurl-devel libgmp-devel \
-	libldap-devel libpam-devel libssl-devel libxml2-devel easy-rsa)
+deps=(wget net-tools flex gperf libcap-devel libcurl-devel libgmp-devel \
+	libldap-devel libpam0-devel libssl-devel libxml2-devel easy-rsa)
 
 for item in ${deps[*]}
 do
@@ -148,7 +175,8 @@ get_pub_ip() {
 
 	while [[ true ]]; do
 		echo -n '-> '
-		read ip_type
+		# read ip_type
+		ip_type=4
 		case $ip_type in
 			[4]* ) PUBLICIP=$(wget -q -O - http://ipv4.wtfismyip.com/text); break;;
 			[6]* ) PUBLICIP=$(wget -q -O - http://ipv6.wtfismyip.com/text); break;;
@@ -176,6 +204,7 @@ get_pub_ip() {
 get_pub_ip
 
 sleep 1
+
 # geting private ip adress
 echo 'Getting private ip...'
 {
@@ -189,19 +218,92 @@ echo 'Private ip getted succussefully!'
 # geneging certifikate
 gen_cer() {
 	echo 'Genering sertificate...'
+	pushd $DATADIR/$INITROOT
+	check_dir=$(ls | grep easy-rsa-ipsec)
+	if [[ -z $check_dir ]]; then
+		git clone https://github.com/ValdikSS/easy-rsa-ipsec
+	fi
+	cd easy-rsa-ipsec/easyrsa3/
 	rm -rf pki
-	easyrsa init-pki
-	echo "@$PUBLICIP" | easyrsa build-ca nopass
-	easyrsa build-server-full $PUBLICIP nopass
-	easyrsa build-client-full altun nopass
+	./easyrsa init-pki
+	echo | ./easyrsa build-ca nopass
+	./easyrsa build-server-full $PUBLICIP nopass
+	cp -f pki/ca.crt pki/issued
+	./easyrsa export-p12 ca nopass
+	mv pki/private/ca.p12 $DATADIR/$INITROOT
+	mv pki/issued/$PUBLICIP.crt $STRONGSWANDIR/ipsec.d/certs
+	mv pki/private/$PUBLICIP.key $STRONGSWANDIR/ipsec.d/private
+	popd
 }
-gen_cer
+
+if [[ $IPSECTYPE == 'cer' ]]; then
+	gen_cer
+fi
 
 echo 'Now will be configurating files...'
 
-echo '/etc/strongswan/ipsec.conf'
+# saving old conf and secr files
+pushd $STRONGSWANDIR
+mv ipsec.conf ipsec.conf.old
+mv ipsec.secrets ipsec.secrets.old
+touch ipsec.conf
+touch ipsec.secrets
+popd
 
-cat > /etc/strongswan/ipsec.conf <<EOF
+# saving parametrs...
+cat > $DATADIR$INITROOT/init <<EOF
+$IPSECTYPE
+$REMOTEIP
+$IPSEC_PSK
+''
+EOF
+pushd $DATADIR/$INITROOT
+rm -f ipsec.*
+cp -f $STRONGSWANDIR/ipsec.conf .
+cp -f $STRONGSWANDIR/ipsec.secrets .
+popd
+
+psk_method() {
+	if [[ $IPSECTYPE == 'psk' ]]; then
+		echo '/etc/strongswan/ipsec.conf'
+		cat > /etc/strongswan/ipsec.conf <<EOF
+config setup
+
+conn %default
+	ikelifetime=60m
+	keylife=20m
+	rekeymargin=3m
+	keyingtries=1
+	authby=secret
+	fragmentation=yes
+	keyexchange=ikev2
+	mobike=no
+
+conn net-net
+	left=$PRIVATEIP
+	leftid=@$PUBLICIP
+	leftsubnet=$MOONSUB
+	leftfirewall=yes
+	right=$REMOTEIP
+	rightid=@$REMOTEIP
+	rightsubnet=$SUNSUB
+	auto=add
+EOF
+
+		sleep 1
+		echo '/etc/strongswan/ipsec.secrets'
+		cat > /etc/strongswan/ipsec.secrets <<EOF
+@$PUBLICIP @$REMOTEIP : PSK $IPSEC_PSK
+EOF
+	fi
+}
+
+psk_method
+
+cer_method() {
+	if [[ $IPSECTYPE == 'cer' ]]; then
+		echo '/etc/strongswan/ipsec.conf'
+		cat > /etc/strongswan/ipsec.conf <<EOF
 config setup
 
 conn %default
@@ -211,30 +313,67 @@ conn %default
 	keyingtries=1
 	fragmentation=yes
 	keyexchange=ikev2
+	mobike=no
 
-conn home
-	left=%any
-	leftsourceip=%config
-	leftcert=nastyCer.pem
-	leftid=%any
+conn net-net
+	left=$PRIVATEIP
+	leftcert=$PUBLICIP.crt
+	leftid=@$PUBLICIP
+	leftsubnet=$MOONSUB
 	leftfirewall=yes
-	right=18.144.20.52
-	rightsubnet=0.0.0.0/0
-	rightid=ec2-18-144-20-52.us-west-1.compute.amazonaws.com
+	right=$REMOTEIP
+	rightid=@$REMOTEIP
+	rightsubnet=$SUNSUB
 	auto=add
 EOF
 
-sleep 1
-
-echo '/etc/strongswan/ipsec.secrets'
-
-chmod 664 /etc/strongswan/ipsec.secrets
-cat > /etc/strongswan/ipsec.secrets <<EOF
-: RSA nastyKey.pem "test"
+		sleep 1
+		echo '/etc/strongswan/ipsec.secrets'
+		cat > /etc/strongswan/ipsec.secrets <<EOF
+: RSA $PUBLICIP.key
 EOF
+	fi
+}
 
-ipsec restart >/dev/null
-ipsec up home >/dev/null
+cer_method
+
+# Configuring the Firewall & Kernel IP Forwarding
+conf_firewall() {
+	iptables -P INPUT ACCEPT
+	iptables -P FORWARD ACCEPT
+	iptables -F
+	iptables -Z
+	iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+	iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+	iptables -A INPUT -i lo -j ACCEPT
+	iptables -A INPUT -p udp --dport  500 -j ACCEPT
+	iptables -A INPUT -p udp --dport 4500 -j ACCEPT
+	iptables -A INPUT -j DROP
+	iptables -A FORWARD -j DROP
+
+	rm -f /etc/sysctl.conf
+	touch /etc/sysctl.conf
+	cat > /etc/sysctl.conf <<EOF
+net.ipv4.ip_forward=1
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.ip_no_pmtu_disc = 1
+EOF
+}
+
+if [[ $IPSECTYPE == 'cer' ]]; then
+	mv $DATADIR$INITROOT/ca.p12 .
+	chmod 664 ca.p12
+	echo 'Move ca.p12 from this diractory to a second server'	
+fi
+
+if [[ $IPSECTYPE == 'psk' && $TYPENET == 'moon' ]]; then
+	mv $DATADIR$INITROOT/IPSEC_PSK.key .
+	chmod 664 IPSEC_PSK.key
+	echo 'Move key from this diractory to a second server'	
+fi
+
+conf_firewall
+
+ipsec restart
 echo 'ipsec start!'
-echo -n 'you ip '
-echo $(wget -q -O - http://wtfismyip.com/text)
