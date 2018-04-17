@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# Source function library.
+WITHOUT_RC_COMPAT=1
+. /etc/init.d/functions
+
+# Source networking configuration.
+SourceIfNotEmpty /etc/sysconfig/network
+
+# Source service configuration.
+ETCNET_IPSEC=/usr/sbin/etcnet-ipsec
+RETVAL=0
+
+
+start()
+{
+	is_yes "$NETWORKING" || return 0
+
+	$ETCNET_IPSEC --start
+	RETVAL=$?
+	return $RETVAL
+}
+
+stop()
+{
+	is_yes "$NETWORKING" || return 0
+	
+	ipsec restart
+	RETVAL=$?
+	return $RETVAL
+}
+
+restart()
+{
+	ipsec stop
+	sleep 3
+	start
+}
+
+status()
+{
+	ipsec status
+}
+
+case "$1" in
+	start)
+		start
+		;;
+	stop)
+		stop
+		;;
+	reload|restart)
+		restart
+		;;
+	status)
+		status
+		;;
+	*)
+		msg_usage "${0##*/} {start|stop|reload|restart|status}"
+		RETVAL=1
+esac
+
+exit $RETVAL

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # input parameters
-DATADIR='/etc/net'
+DATADIR='/etc/net/'
 INITROOT='ipsec-init'
 IPSEC_PSK=''
 REMOTEIP=''
@@ -33,12 +33,17 @@ fi
 
 # init function
 init_fun() {
-	rm -rf $DATADIR/$INITROOT
-	mkdir $DATADIR/$INITROOT
-	touch $DATADIR/$INITROOT/init
+	rm -rf $DATADIR$INITROOT
+	mkdir $DATADIR$INITROOT
+	touch $DATADIR$INITROOT/init
 }
 
 if [[ $1 == '--reboot' && $2 != '' ]]; then
+	echo 'Option reboot can not have other parameters!'
+	exit 0
+fi
+
+if [[ $1 == '--start' && $2 != '' ]]; then
 	echo 'Option reboot can not have other parameters!'
 	exit 0
 fi
@@ -76,6 +81,30 @@ reboot_fun() {
 	fi
 }
 
+start_fun() {
+	ipsec restart 1>&3 2>&3
+	sleep 3
+	if [[ $(ls $DATADIR | grep $INITROOT) != '' ]]; then
+		if [[ $(ls $DATADIR$INITROOT | grep ipsec.*) != '' ]]; then
+			if [[ $(ipsec up net-net | grep failed) != '' ]]; then
+				echo 'failed!'
+			else
+				echo 'Successful!'
+				sleep 1
+				ipsec status
+			fi
+		fi
+	else
+		echo 'Ipsec not configured!'
+		exit 0;
+	fi
+}
+
+stop_fun() {
+	echo 'Stopping the tunnel connection...'
+	ipsec restart
+}
+
 # 5 param
 while [[ -n $5 ]]; do
 	case $5 in
@@ -86,7 +115,7 @@ while [[ -n $5 ]]; do
 done
 
 # 4 param
-if [[ $4 == '' && $1 != '--reboot' ]]; then
+if [[ $4 == '' && $1 != '--reboot' && $1 != '--start' ]]; then
 	echo 'The parameter should not be empty!'
 	exit 0
 else
@@ -94,7 +123,7 @@ else
 fi
 
 # 3 param
-if [[ $3 == '' && $1 != '--reboot' ]]; then
+if [[ $3 == '' && $1 != '--reboot' && $1 != '--start' ]]; then
 	echo 'The parameter should not be empty!'
 	exit 0
 else
@@ -108,7 +137,7 @@ else
 fi
 
 # 2 param
-if [[ $2 == '' && $1 != '--reboot' ]]; then
+if [[ $2 == '' && $1 != '--reboot' && $1 != '--start' ]]; then
 	echo 'The parameter should not be empty!'
 	exit 0
 else
@@ -130,6 +159,7 @@ else
 		case $1 in
 			--init ) init_fun; break;;
 			--reboot ) reboot_fun; break;;
+			--start ) start_fun; exit 0;;
 			* ) echo "Unknown parameter '$1'"; exit 0;;
 		esac
 	done
@@ -169,7 +199,7 @@ if [[ $5 != '--checkoff' ]]; then
 	sleep 0.5
 	echo 'Check dependencies...'
 	apt-get clean
-	apt-get update >&3
+	apt-get update 1>&3 2>&3
 	deps=(wget net-tools flex gperf libcap-devel libcurl-devel libgmp-devel \
 			libldap-devel libpam0-devel libssl-devel libxml2-devel easy-rsa)
 
@@ -232,7 +262,7 @@ echo 'Private ip address successfully received!'
 # generating certificates
 gen_cer() {
 	echo 'Generating certificates...'
-	pushd $DATADIR/$INITROOT 1>&3
+	pushd $DATADIR$INITROOT 1>&3
 	check_dir=$(ls | grep easy-rsa-ipsec)
 	if [[ -z $check_dir ]]; then
 		git clone https://github.com/ValdikSS/easy-rsa-ipsec 1>&3 2>&3
@@ -244,7 +274,7 @@ gen_cer() {
 	./easyrsa build-server-full $PUBLICIP nopass 1>&3 2>&3
 	cp -f pki/ca.crt pki/issued
 	./easyrsa export-p12 ca nopass 1>&3 2>&3
-	mv pki/private/ca.p12 $DATADIR/$INITROOT
+	mv pki/private/ca.p12 $DATADIR$INITROOT
 	mv pki/issued/$PUBLICIP.crt $STRONGSWANDIR/ipsec.d/certs
 	mv pki/private/$PUBLICIP.key $STRONGSWANDIR/ipsec.d/private
 	popd 1>&3
@@ -271,7 +301,7 @@ $REMOTEIP
 $IPSEC_PSK
 ''
 EOF
-pushd $DATADIR/$INITROOT 1>&3
+pushd $DATADIR$INITROOT 1>&3
 rm -f ipsec.*
 cp -f $STRONGSWANDIR/ipsec.conf .
 cp -f $STRONGSWANDIR/ipsec.secrets .
