@@ -7,31 +7,33 @@ INITROOT='easy-ipsec-init'
 TYPEAUTH=''
 FILENAME=''
 
-pushd $DATADIR$INITROOT
+exec 3>/dev/null
+
+pushd $DATADIR$INITROOT 1>&3 2>&3
 
 # check root
 if [ $(id -u) != 0 ]; then
-	echo 'Please start script whith root!'
+	echo 'Please start script with root!'
 	exit 0
 fi
 
 # param 1
 if [[ -z $1 ]]; then
-	echo 'Parametr does not be empty!'
+	echo 'The parameter should not be empty!'
 	exit 0
 else
 	while [[ -n $1 ]]; do
 		case $1 in
 			--psk ) TYPEAUTH='psk'; break;;
 			--cer ) TYPEAUTH='cer'; break;;
-			* ) echo "Unknow param '$1'"; exit 0;;
+			* ) echo "Unknown parameter '$1'"; exit 0;;
 		esac
 	done
 fi
 
 # param 2
 if [[ -z $2 ]]; then
-	echo 'Parametr does not be empty!'
+	echo 'The parameter should not be empty!'
 	exit 0
 else
 	P12FILE=$2
@@ -46,22 +48,23 @@ fi
 
 if [[ $TYPEAUTH == 'cer' ]]; then
 	cp -f $P12FILE .
-	echo $PWD
 	FILENAME=$(basename $P12FILE)
-	echo 'Extract frpm p12...'
-	openssl pkcs12 -in $FILENAME -nocerts -out ca.key -password pass:'' -nodes
-	openssl pkcs12 -in $FILENAME -clcerts -nokeys -out ca.crt -password pass:''
+	sleep 0.5
+	echo 'Extraction from p12...'
+	sleep 0.5
+	openssl pkcs12 -in $FILENAME -nocerts -out ca.key -password pass:'' -nodes 1>&3 2>&3
+	openssl pkcs12 -in $FILENAME -clcerts -nokeys -out ca.crt -password pass:'' 1>&3 2>&3
 
-	echo 'Move ca & key...'
+	sleep 0.5
+	echo 'Key installation...'
 	mv ca.crt $STRONGSWANDIR/ipsec.d/cacerts/
 	mv ca.key $STRONGSWANDIR/ipsec.d/private/
 
 	rm -rf ca.crt
 	rm -rf ca.key
-
-	popd
-
-	echo 'ok!'	
 fi
 
-ipsec restart
+popd 1>&3 2>&3
+ipsec restart 1>&3 2>&3
+
+echo 'Keys successfully installed!'

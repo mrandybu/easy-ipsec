@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# input params
-DATADIR='/etc/'
-INITROOT='easy-ipsec-init'
+# input parameters
+DATADIR='/etc/net'
+INITROOT='ipsec-init'
 IPSEC_PSK=''
 REMOTEIP=''
 IPSECTYPE=''
@@ -15,14 +15,20 @@ exec 3>/dev/null
 
 # check root
 if [ $(id -u) != 0 ]; then
-	echo 'Please start script whith root!'
+	echo 'Please start script with root!'
 	exit 0
 fi
 
-# check version of linux
-if [[ $(uname --release | grep 'alt') != $(uname --release) ]]; then
-	echo 'This version linux not altlinux!'
-	exit 0
+if [[ $5 == '--checkoff' ]]; then
+	STRONGSWANDIR=/etc
+fi
+
+if [[ $5 != '--checkoff' ]]; then
+	# check version of linux
+	if [[ $(uname --release | grep 'alt') != $(uname --release) ]]; then
+		echo 'Version linux is not altlinux!'
+		exit 0
+	fi	
 fi
 
 # init function
@@ -32,28 +38,34 @@ init_fun() {
 	touch $DATADIR/$INITROOT/init
 }
 
+if [[ $1 == '--reboot' && $2 != '' ]]; then
+	echo 'Option reboot can not have other parameters!'
+	exit 0
+fi
+
 # reboot function
 reboot_fun() {
-
 	if [[ $(ls $DATADIR | grep $INITROOT) != '' ]]; then
 		if [[ $(ls $DATADIR$INITROOT | grep ipsec.*) != '' ]]; then
+			sleep 0.5
+			echo 'Parameters will be installed to default'
 			rm -f $STRONGSWANDIR/ipsec.conf
 			rm -f $STRONGSWANDIR/ipsec.secrets
 			cp -f $DATADIR$INITROOT/ipsec.* $STRONGSWANDIR
-			ipsec restart
-			echo 'Ipsec start! Use esey-ipsec start!'
+			ipsec restart 1>&3 2>&3
+			echo "IPsec is started! Use the 'etcnet-ipsec up'"
 			exit 0
 		else
-			echo 'Init-file not found. Pleas make script with --init'
+			echo 'Init-file not found. Please run script with --init'
 			exit 0
 		fi
 	else
-		echo -n 'init does not find! Init now? '
+		echo -n 'Init-file not found! Init now? '
 		while [[ true ]]; do
 			echo -n '[Y|n]-> '
 			read key
 			if [[ -z key ]]; then
-				echo -n 'Key does not mast empty!-> '
+				echo -n 'The key should not be empty!-> '
 			else
 				case $key in
 					[Yy]* ) init_fun; break;;
@@ -69,13 +81,13 @@ while [[ -n $5 ]]; do
 	case $5 in
 		--debug ) exec 3>&1; break;;
 		--checkoff ) break;;
-		* ) echo "Unknow params '$5'"; exit 0;
+		* ) echo "Unknown parameter '$5'"; exit 0;
 	esac
 done
 
 # 4 param
 if [[ $4 == '' && $1 != '--reboot' ]]; then
-	echo 'Parametr does not be empty!'
+	echo 'The parameter should not be empty!'
 	exit 0
 else
 	REMOTEIP=$4
@@ -83,54 +95,54 @@ fi
 
 # 3 param
 if [[ $3 == '' && $1 != '--reboot' ]]; then
-	echo 'Parametr does not be empty!'
+	echo 'The parameter should not be empty!'
 	exit 0
 else
 	while [[ -n $3 ]]; do
 		case $3 in
 			--moon ) TYPENET='moon'; MOONSUB='10.1.0.0/16'; SUNSUB='10.2.0.0/16'; break;;
 			--sun ) TYPENET='sun'; MOONSUB='10.2.0.0/16'; SUNSUB='10.1.0.0/16'; break;;
-			* ) echo "Unknow param '$3'"; exit 0;;
+			* ) echo "Unknown parameter '$3'"; exit 0;;
 		esac
 	done
 fi
 
 # 2 param
 if [[ $2 == '' && $1 != '--reboot' ]]; then
-	echo 'Parametr does not be empty!'
+	echo 'The parameter should not be empty!'
 	exit 0
 else
 	while [[ -n $2 ]]; do
 		case $2 in
 			--psk ) IPSECTYPE='psk'; break;;
 			--cer ) IPSECTYPE='cer'; break;;
-			* ) echo "Unknow param '$2'"; exit 0;;
+			* ) echo "Unknown parameter '$2'"; exit 0;;
 		esac
 	done
 fi
 
 # 1 param
 if [[ -z $1 ]]; then
-	echo 'Parametr does not be empty!'
+	echo 'The parameter should not be empty!'
 	exit 0
 else
 	while [[ -n $1 ]]; do
 		case $1 in
 			--init ) init_fun; break;;
 			--reboot ) reboot_fun; break;;
-			* ) echo "Unknow param '$1'"; exit 0;;
+			* ) echo "Unknown parameter '$1'"; exit 0;;
 		esac
 	done
 fi
 
-# genering key for IPSEC_PSK
+# generating key for IPSEC PSK
 genering_key() {
-	echo -n 'Please input string (min 10 char): '
+	echo -n 'Please enter random symbols (min 10): '
 	in_str='simple'
 	while [[ true ]]; do
 		read in_str
-		if [[ $(expr length $in_str 2>/dev/null) -le 10 ]]; then
-			echo -n 'Inputed string low 10 char -> '
+		if [[ $(expr length $in_str 2>&3) -le 10 ]]; then
+			echo -n 'Minimum length 10 symbols! -> '
 		else break
 		fi
 	done
@@ -140,41 +152,43 @@ genering_key() {
 	IPSEC_PSK=$(expr substr "$IPSEC_PSK" 1 $l)
 	IPSEC_PSK=$(python py_scr.py 'genering_key' $IPSEC_PSK)
 	echo $IPSEC_PSK > $DATADIR$INITROOT/IPSEC_PSK.key
-	echo 'Key generated succusseful!'
+	sleep 0.5
+	echo 'The key was successfully generated!'
 }
+
+sleep 0.5
 
 if [[ $IPSECTYPE == 'psk' && $TYPENET == 'moon' ]]; then
 	genering_key
 fi
 
-# installing requires
-rm -f /var/cache/apt/archives/lock
-rm -f /var/lib/apt/lists/lock
-echo 'Update cahce for apt...'
-apt-get clean
-apt-get update > /dev/null
-echo 'Cheking dependencies...'
-deps=(wget net-tools flex gperf libcap-devel libcurl-devel libgmp-devel \
-	libldap-devel libpam0-devel libssl-devel libxml2-devel easy-rsa)
+if [[ $5 != '--checkoff' ]]; then
+	# installing dependencies
+	rm -f /var/cache/apt/archives/lock
+	rm -f /var/lib/apt/lists/lock
+	sleep 0.5
+	echo 'Check dependencies...'
+	apt-get clean
+	apt-get update >&3
+	deps=(wget net-tools flex gperf libcap-devel libcurl-devel libgmp-devel \
+			libldap-devel libpam0-devel libssl-devel libxml2-devel easy-rsa)
 
-for item in ${deps[*]}
-do
-	if [[ $(rpm -qa $item) != '' ]]; then
-		echo "$item already exist"
-	else
-		echo "$item installing..."
-		apt-get install -y $item >&3
-	fi
-done
+	for item in ${deps[*]}
+	do
+		if [[ -z $(rpm -qa $item) ]]; then
+			apt-get install -y $item 1>&3 2>&3
+		fi
+	done
+fi
 
-# getting public ip adress
+# getting public ip address
 get_pub_ip() {
 	echo 'Please choose type of connection:'
 	echo '4) IPv4'
 	echo '6) IPv6'
 
 	while [[ true ]]; do
-		echo -n '-> '
+		echo '-> '
 		# read ip_type
 		ip_type=4
 		case $ip_type in
@@ -183,90 +197,90 @@ get_pub_ip() {
 		esac
 	done
 
-	echo 'Getting public ip adress...'
+	echo 'Getting public ip address...'
 	if [[ "x$PUBLICIP" == "x" ]]; then
-		echo 'Error of check your ip-addres. Please, input ip manually.'
+		echo 'Eror of receiving a public address! Enter the address manually.'
 		while [[ true ]]; do
 			echo -n 'ip-> '
 			read man_ip
 			if [[ $(expr length $man_ip) -lt 7 ]]; then
-				echo 'Incorrect format ip-address'
+				echo 'Incorrect format ip-address!'
 			else
 				PUBLICIP=$man_ip
 				break
 			fi
 		done
 	fi
-	sleep 1
-	echo 'Public ip getted succussefully!'
+	sleep 0.5
+	echo 'Public ip address successfully received!'
 }
 
 get_pub_ip
 
-sleep 1
+sleep 0.5
 
-# geting private ip adress
-echo 'Getting private ip...'
+# getting private ip address
+echo 'Getting private ip address...'
 {
-	PRIVATEIP=$(hostname -i 2>/dev/null)
+	PRIVATEIP=$(hostname -i 2>&3)
 } || {
 	PRIVATEIP=$(ifconfig | sed -n '2 p' | sed 's/.*inet.*dr://;s/ B.*//')
 }
-sleep 1
-echo 'Private ip getted succussefully!'
+sleep 0.5
+echo 'Private ip address successfully received!'
 
-# geneging certifikate
+# generating certificates
 gen_cer() {
-	echo 'Genering sertificate...'
-	pushd $DATADIR/$INITROOT
+	echo 'Generating certificates...'
+	pushd $DATADIR/$INITROOT 1>&3
 	check_dir=$(ls | grep easy-rsa-ipsec)
 	if [[ -z $check_dir ]]; then
-		git clone https://github.com/ValdikSS/easy-rsa-ipsec
+		git clone https://github.com/ValdikSS/easy-rsa-ipsec 1>&3 2>&3
 	fi
 	cd easy-rsa-ipsec/easyrsa3/
 	rm -rf pki
-	./easyrsa init-pki
-	echo | ./easyrsa build-ca nopass
-	./easyrsa build-server-full $PUBLICIP nopass
+	./easyrsa init-pki 1>&3 2>&3
+	echo | ./easyrsa build-ca nopass 1>&3 2>&3
+	./easyrsa build-server-full $PUBLICIP nopass 1>&3 2>&3
 	cp -f pki/ca.crt pki/issued
-	./easyrsa export-p12 ca nopass
+	./easyrsa export-p12 ca nopass 1>&3 2>&3
 	mv pki/private/ca.p12 $DATADIR/$INITROOT
 	mv pki/issued/$PUBLICIP.crt $STRONGSWANDIR/ipsec.d/certs
 	mv pki/private/$PUBLICIP.key $STRONGSWANDIR/ipsec.d/private
-	popd
+	popd 1>&3
 }
 
 if [[ $IPSECTYPE == 'cer' ]]; then
 	gen_cer
 fi
 
-echo 'Now will be configurating files...'
+echo 'Configuring files...'
 
-# saving old conf and secr files
-pushd $STRONGSWANDIR
+# saving old conf and secret files
+pushd $STRONGSWANDIR 1>&3
 mv ipsec.conf ipsec.conf.old
 mv ipsec.secrets ipsec.secrets.old
 touch ipsec.conf
 touch ipsec.secrets
-popd
+popd 1>&3
 
-# saving parametrs...
+# saving parameters...
 cat > $DATADIR$INITROOT/init <<EOF
 $IPSECTYPE
 $REMOTEIP
 $IPSEC_PSK
 ''
 EOF
-pushd $DATADIR/$INITROOT
+pushd $DATADIR/$INITROOT 1>&3
 rm -f ipsec.*
 cp -f $STRONGSWANDIR/ipsec.conf .
 cp -f $STRONGSWANDIR/ipsec.secrets .
-popd
+popd 1>&3
 
 psk_method() {
 	if [[ $IPSECTYPE == 'psk' ]]; then
-		echo '/etc/strongswan/ipsec.conf'
-		cat > /etc/strongswan/ipsec.conf <<EOF
+		echo 'Configuring settings for PSK authorization...'
+		cat > $STRONGSWANDIR/ipsec.conf <<EOF
 config setup
 
 conn %default
@@ -290,9 +304,8 @@ conn net-net
 	auto=add
 EOF
 
-		sleep 1
-		echo '/etc/strongswan/ipsec.secrets'
-		cat > /etc/strongswan/ipsec.secrets <<EOF
+		sleep 0.5
+		cat > $STRONGSWANDIR/ipsec.secrets <<EOF
 @$PUBLICIP @$REMOTEIP : PSK $IPSEC_PSK
 EOF
 	fi
@@ -302,8 +315,8 @@ psk_method
 
 cer_method() {
 	if [[ $IPSECTYPE == 'cer' ]]; then
-		echo '/etc/strongswan/ipsec.conf'
-		cat > /etc/strongswan/ipsec.conf <<EOF
+		echo 'Configuring settings for CER authorization...'
+		cat > $STRONGSWANDIR/ipsec.conf <<EOF
 config setup
 
 conn %default
@@ -327,9 +340,8 @@ conn net-net
 	auto=add
 EOF
 
-		sleep 1
-		echo '/etc/strongswan/ipsec.secrets'
-		cat > /etc/strongswan/ipsec.secrets <<EOF
+		sleep 0.5
+		cat > $STRONGSWANDIR/ipsec.secrets <<EOF
 : RSA $PUBLICIP.key
 EOF
 	fi
@@ -337,8 +349,9 @@ EOF
 
 cer_method
 
-# Configuring the Firewall & Kernel IP Forwarding
+# configuring firewall
 conf_firewall() {
+	echo 'Configuring firewall...'
 	iptables -P INPUT ACCEPT
 	iptables -P FORWARD ACCEPT
 	iptables -F
@@ -364,16 +377,19 @@ EOF
 if [[ $IPSECTYPE == 'cer' ]]; then
 	mv $DATADIR$INITROOT/ca.p12 .
 	chmod 664 ca.p12
-	echo 'Move ca.p12 from this diractory to a second server'	
+	echo "Move '.p12' from this directory to a second server"
 fi
 
 if [[ $IPSECTYPE == 'psk' && $TYPENET == 'moon' ]]; then
 	mv $DATADIR$INITROOT/IPSEC_PSK.key .
 	chmod 664 IPSEC_PSK.key
-	echo 'Move key from this diractory to a second server'	
+	echo "Move '.key' from this directory to a second server"
 fi
 
 conf_firewall
 
-ipsec restart
-echo 'ipsec start!'
+if [[ $1 != '--reboot' ]]; then
+	ipsec restart 1>&3 2>&3
+fi
+
+echo 'IPsec started!'
