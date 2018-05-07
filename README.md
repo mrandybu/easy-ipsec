@@ -6,7 +6,8 @@ Generation of keys, installation of dependencies and configuration of the firewa
 How does it work
 ------------------
 1. Clone the repository anywhere
-2. Run the ipsec under the root from the repository directory
+2. For auto-installing use 'sudo ./setup'
+3. Run the easy-ipsec (sudo easy-ipsec)
 
 **ipsec parameters**
 
@@ -32,7 +33,10 @@ optional parameters
     --debug - includes output of information on all stages of ipsec execution.
     --chekoff - disables most of the checks. Required if an error occurred. 
     
-Is necessary if there is a launch not on the altlinux or ubuntu. But you must first 
+When the configuration was successful, you can manage the ipsec connection use 'sudo service easy-ipsec PARAM'
+
+If you doubt the compatibility with your distribution or if there was an error while configuring connections, 
+you can try to start the configuration with the parameter '--chekoff'. But you must first 
 set all the dependencies yourself.
 At this moment easy-ipsec supports only ipv4 and connections type of site-to-site 
 but this will be fixed in the near future ;)
