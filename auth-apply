@@ -2,8 +2,8 @@
 
 P12FILE=''
 STRONGSWANDIR='/etc/strongswan'
-DATADIR='/etc/net/'
-INITROOT='ipsec-init'
+DATADIR='/etc/easy-ipsec/'
+INITROOT='init'
 TYPEAUTH=''
 FILENAME=''
 
@@ -53,16 +53,17 @@ if [[ $TYPEAUTH == 'cer' ]]; then
 	sleep 0.5
 	echo 'Extraction from p12...'
 	sleep 0.5
-	openssl pkcs12 -in $FILENAME -nocerts -out ca.key -password pass:'' -nodes 1>&3 2>&3
-	openssl pkcs12 -in $FILENAME -clcerts -nokeys -out ca.crt -password pass:'' 1>&3 2>&3
+	KEYNAME=$($FILENAME | sed 's/.p12//')
+	openssl pkcs12 -in $FILENAME -nocerts -out $KEYNAME.key -password pass:'' -nodes 1>&3 2>&3
+	openssl pkcs12 -in $FILENAME -clcerts -nokeys -out $KEYNAME.crt -password pass:'' 1>&3 2>&3
 
 	sleep 0.5
 	echo 'Key installation...'
-	mv ca.crt $STRONGSWANDIR/ipsec.d/cacerts/
-	mv ca.key $STRONGSWANDIR/ipsec.d/private/
+	mv $KEYNAME.crt $STRONGSWANDIR/ipsec.d/cacerts/
+	mv $KEYNAME.key $STRONGSWANDIR/ipsec.d/private/
 
-	rm -rf ca.crt
-	rm -rf ca.key
+	rm -f $KEYNAME.crt
+	rm -f $KEYNAME.key
 fi
 
 popd 1>&3 2>&3
