@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # input parameters
-DATADIR='/etc/net/'
-INITROOT='ipsec-init'
+DATADIR='/etc/easy-ipsec/'
+INITROOT='init'
 IPSEC_PSK=''
 REMOTEIP=''
 IPSECTYPE=''
@@ -10,42 +10,47 @@ STRONGSWANDIR='/etc/strongswan'
 SUNSUB=''
 MOONSUB=''
 TYPENET=''
+OSRELEASE='/etc/os-release'
 
 exec 3>/dev/null
 
 # check root
 if [ $(id -u) != 0 ]; then
 	echo 'Please start script with root!'
-	exit 0
+	exit 1
 fi
+
+# check datadir
+if [[ ! -x "$path" ]]; then
+	mkdir $DATADIR
 
 if [[ $5 == '--checkoff' ]]; then
 	STRONGSWANDIR=/etc
 fi
 
+# check linux distribution
 if [[ $5 != '--checkoff' ]]; then
-	# check version of linux
-	if [[ $(uname --release | grep 'alt') != $(uname --release) ]]; then
-		echo 'Version linux is not altlinux!'
-		exit 0
-	fi	
+	if [[ -z $(cat $OSRELEASE | grep '^NAME=' | sed 's/.*=//') 1>&3 2>&3 ]]; then
+		echo 'Unknown linux distribution!'
+		exit 1
+	fi
 fi
 
 # init function
 init_fun() {
-	rm -rf $DATADIR$INITROOT
+	rm -rf $DATADIR
 	mkdir $DATADIR$INITROOT
 	touch $DATADIR$INITROOT/init
 }
 
 if [[ $1 == '--reboot' && $2 != '' ]]; then
 	echo 'Option reboot can not have other parameters!'
-	exit 0
+	exit 1
 fi
 
 if [[ $1 == '--start' && $2 != '' ]]; then
 	echo 'Option reboot can not have other parameters!'
-	exit 0
+	exit 1
 fi
 
 # reboot function
@@ -54,6 +59,8 @@ reboot_fun() {
 		if [[ $(ls $DATADIR$INITROOT | grep ipsec.*) != '' ]]; then
 			sleep 0.5
 			echo 'Parameters will be installed to default'
+			mv $STRONGSWANDIR/ipsec.conf $STRONGSWANDIR/ipsec.conf.old 2>&3
+			mv $STRONGSWANDIR/ipsec.secrets $STRONGSWANDIR/ipsec.secrets.old 2>&3
 			rm -f $STRONGSWANDIR/ipsec.conf
 			rm -f $STRONGSWANDIR/ipsec.secrets
 			cp -f $DATADIR$INITROOT/ipsec.* $STRONGSWANDIR
@@ -62,7 +69,7 @@ reboot_fun() {
 			exit 0
 		else
 			echo 'Init-file not found. Please run script with --init'
-			exit 0
+			exit 1
 		fi
 	else
 		echo -n 'Init-file not found! Init now? '
@@ -74,7 +81,7 @@ reboot_fun() {
 			else
 				case $key in
 					[Yy]* ) init_fun; break;;
-					[Nn]* ) exit 0;;
+					[Nn]* ) exit 1;;
 				esac
 			fi
 		done
@@ -96,7 +103,7 @@ start_fun() {
 		fi
 	else
 		echo 'Ipsec not configured!'
-		exit 0;
+		exit 1
 	fi
 }
 
@@ -117,7 +124,7 @@ done
 # 4 param
 if [[ $4 == '' && $1 != '--reboot' && $1 != '--start' ]]; then
 	echo 'The parameter should not be empty!'
-	exit 0
+	exit 1
 else
 	REMOTEIP=$4
 fi
@@ -125,7 +132,7 @@ fi
 # 3 param
 if [[ $3 == '' && $1 != '--reboot' && $1 != '--start' ]]; then
 	echo 'The parameter should not be empty!'
-	exit 0
+	exit 1
 else
 	while [[ -n $3 ]]; do
 		case $3 in
@@ -139,7 +146,7 @@ fi
 # 2 param
 if [[ $2 == '' && $1 != '--reboot' && $1 != '--start' ]]; then
 	echo 'The parameter should not be empty!'
-	exit 0
+	exit 1
 else
 	while [[ -n $2 ]]; do
 		case $2 in
@@ -153,7 +160,7 @@ fi
 # 1 param
 if [[ -z $1 ]]; then
 	echo 'The parameter should not be empty!'
-	exit 0
+	exit 1
 else
 	while [[ -n $1 ]]; do
 		case $1 in
@@ -213,21 +220,8 @@ fi
 
 # getting public ip address
 get_pub_ip() {
-	echo 'Please choose type of connection:'
-	echo '4) IPv4'
-	echo '6) IPv6'
-
-	while [[ true ]]; do
-		echo '-> '
-		# read ip_type
-		ip_type=4
-		case $ip_type in
-			[4]* ) PUBLICIP=$(wget -q -O - http://ipv4.wtfismyip.com/text); break;;
-			[6]* ) PUBLICIP=$(wget -q -O - http://ipv6.wtfismyip.com/text); break;;
-		esac
-	done
-
 	echo 'Getting public ip address...'
+	PUBLICIP=$(wget -q -O - http://ipv4.wtfismyip.com/text)
 	if [[ "x$PUBLICIP" == "x" ]]; then
 		echo 'Eror of receiving a public address! Enter the address manually.'
 		while [[ true ]]; do
@@ -272,9 +266,8 @@ gen_cer() {
 	./easyrsa init-pki 1>&3 2>&3
 	echo | ./easyrsa build-ca nopass 1>&3 2>&3
 	./easyrsa build-server-full $PUBLICIP nopass 1>&3 2>&3
-	cp -f pki/ca.crt pki/issued
-	./easyrsa export-p12 ca nopass 1>&3 2>&3
-	mv pki/private/ca.p12 $DATADIR$INITROOT
+	./easyrsa build-server-full $REMOTEIP nopass 1>&3 2>&3
+	./easyrsa export-p12 $REMOTEIP nopass 1>&3 2>&3
 	mv pki/issued/$PUBLICIP.crt $STRONGSWANDIR/ipsec.d/certs
 	mv pki/private/$PUBLICIP.key $STRONGSWANDIR/ipsec.d/private
 	popd 1>&3
@@ -394,6 +387,7 @@ conf_firewall() {
 	iptables -A INPUT -j DROP
 	iptables -A FORWARD -j DROP
 
+	mv /etc/sysctl.conf /etc/sysctl.conf.old
 	rm -f /etc/sysctl.conf
 	touch /etc/sysctl.conf
 	cat > /etc/sysctl.conf <<EOF
@@ -405,9 +399,9 @@ EOF
 }
 
 if [[ $IPSECTYPE == 'cer' ]]; then
-	mv $DATADIR$INITROOT/ca.p12 .
-	chmod 664 ca.p12
-	echo "Move '.p12' from this directory to a second server"
+	mv $DATADIR$INITROOT/$REMOTEIP.p12 .
+	chmod 664 $REMOTEIP.p12
+	echo "Move '$REMOTEIP.p12' from this directory to a second server"
 fi
 
 if [[ $IPSECTYPE == 'psk' && $TYPENET == 'moon' ]]; then
