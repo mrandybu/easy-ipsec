@@ -21,7 +21,7 @@ if [ $(id -u) != 0 ]; then
 fi
 
 # check datadir
-if [[ ! -x "$path" ]]; then
+if [[ ! -x "$DATADIR" ]]; then
 	mkdir $DATADIR
 
 if [[ $5 == '--checkoff' ]]; then

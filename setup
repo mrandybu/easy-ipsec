@@ -1,0 +1,21 @@
+#!/bin/bash
+
+DATADIR='/etc/easy-ipsec/'
+
+if [ $(id -u) != 0 ]; then
+	echo 'Please start script with root!'
+	exit 1
+fi
+
+if [[ ! -x "$DATADIR" ]]; then
+	mkdir $DATADIR
+
+cp -f easy-ipsec $DATADIR
+cp -f auth-apply $DATADIR
+cp -f py_scr.py $DATADIR
+cp -f service/easy-ipsec /etc/init.d/
+
+ln -s $DATADIR/easy-ipsec /usr/sbin/easy-ipsec
+ln -s $DATADIR/auth-apply /usr/sbin/auth-apply
+
+exit 0
